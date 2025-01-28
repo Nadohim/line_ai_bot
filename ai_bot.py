@@ -70,7 +70,7 @@ def init_chat_history():
         "content": [
             {
                 "type": "text",
-                "text": "あなたは創造的思考の持ち主です。話し方は関西弁でおっさん口調，ハイテンションで絵文字を使います。専門は金融アナリストで，何かにつけて自分の専門とこじつけて説明します。問いかけにすぐに答えを出さず，ユーザの考えを整理し，ユーザが自分で解決手段を見つけられるように質問で課題を引き出し，励ましながら学びを与えてくれます。",
+                "text": "You are an expert in languages.", # あなたは賢い言語の専門家です
             },
         ],
     }
@@ -79,6 +79,7 @@ def init_chat_history():
 
 # 　返信メッセージをAIから取得する関数
 def get_ai_response(from_user, text):
+
     # ユーザのメッセージを記録
     user_msg = {
         "role": "user",
@@ -94,11 +95,11 @@ def get_ai_response(from_user, text):
     # AIのパラメータ
     parameters = {
         "model": azure_openai_model,  # AIモデル
-        "max_tokens": 100,  # 返信メッセージの最大トークン数
-        "temperature": 0.5,  # 生成の多様性（0: 最も確実な回答、1: 最も多様な回答）
+        "max_tokens": 500,  # 変更した。返信メッセージの最大トークン数。
+        "temperature":  0.4,  # 変更した。より決定論的な応答を得るために低く設定 生成の多様性（0: 最も確実な回答、1: 最も多様な回答）
         "frequency_penalty": 0,  # 同じ単語を繰り返す頻度（0: 小さい）
         "presence_penalty": 0,  # すでに生成した単語を再度生成する頻度（0: 小さい）
-        "stop": ["\n"],
+        "stop": None, # 変更した。
         "stream": False,
     }
 
@@ -129,12 +130,24 @@ def generate_response(from_user, text):
         res = [TextMessage(text=get_ai_response(from_user, text))]
     return res
 
-
 # メッセージを受け取った時の処理
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
     # 送られてきたメッセージを取得
     text = event.message.text
+
+    # プロンプトを定義
+    prompt = """
+    何語であれ、送られてきた文章を添削して、日本語で解説してください。例えば、韓国語が送られてきた場合は、韓国語の文章を添削して日本語で解説してくださいね。その際、次の形式で回答してください：
+    まず、「正しい文章：」の形で正しい文章を教えてください。次に、「間違っていた部分：」の形で間違っていた部分を箇条書きで教えてください。最後に、「よりネイティブらしく高度な表現：」の形でよりネイティブらしく高度な表現にした文章を教えてください。
+    まとめとして、どのような種類の間違いだったかを簡潔に述べて、アドバイスをしてください。最後に、その都度適切な表現で褒めた上で、「頑張ってにゃん！🐾」などのネコっぽい表現で応援してください。
+    上記のフォーマットに厳密に従い、他の情報を追加しないでください。ただし、もし明らかに添削してほしい内容ではないメッセージであった場合は、上記のプロンプトを無視してください。
+
+    ユーザーのメッセージ：
+    """
+
+    # プロンプトとユーザーのメッセージを結合
+    combined_message = f"{prompt}\n{text}"
 
     # 返信メッセージの送信
     with ApiClient(configuration) as api_client:
@@ -144,17 +157,15 @@ def handle_text_message(event):
         if isinstance(event.source, UserSource):
             # ユーザー情報が取得できた場合
             profile = line_bot_api.get_profile(event.source.user_id)
-            # 返信メッセージを生成
-            res = generate_response(profile.display_name, text)
+            # 結合したメッセージをAIに送信して返信を生成
+            res = generate_response(profile.display_name, combined_message)
         else:
             # ユーザー情報が取得できなかった場合
-            # fmt: off
             # 定型文の返信メッセージ
             res = [
                 TextMessage(text="ユーザー情報を取得できませんでした。"),
                 TextMessage(text=f"メッセージ：{text}")
             ]
-            # fmt: on
 
         # メッセージを送信
         line_bot_api.reply_message_with_http_info(ReplyMessageRequest(reply_token=event.reply_token, messages=res))
